@@ -1,0 +1,545 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>世界の株価 記録帳</title>
+<style>
+  :root{
+    --bg:#f4f1ea;
+    --card:#ffffff;
+    --text:#2b2b2b;
+    --sub:#6b6b6b;
+    --line:#e0dbd0;
+    --accent:#3f6b57;
+    --accent-d:#325343;
+    --danger:#b5453b;
+    --up:#c0392b;
+    --down:#1e6f3d;
+    --shadow:0 1px 3px rgba(0,0,0,.08);
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --bg:#1c1e1d;
+      --card:#272a29;
+      --text:#e9e7e1;
+      --sub:#a7a49b;
+      --line:#3a3e3c;
+      --accent:#6fae91;
+      --accent-d:#83c0a3;
+      --danger:#e0736a;
+      --up:#f08a7e;
+      --down:#7fce9e;
+      --shadow:0 1px 3px rgba(0,0,0,.3);
+    }
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0;background:var(--bg);color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Hiragino Kaku Gothic ProN","Noto Sans JP","Yu Gothic",Meiryo,sans-serif;
+    line-height:1.7;-webkit-text-size-adjust:100%;
+  }
+  header{background:var(--accent);color:#fff;padding:16px;text-align:center}
+  header h1{margin:0;font-size:1.2rem;font-weight:700;letter-spacing:.04em}
+  header p{margin:4px 0 0;font-size:.78rem;opacity:.92}
+  .wrap{max-width:820px;margin:0 auto;padding:16px}
+  .card{
+    background:var(--card);border:1px solid var(--line);border-radius:12px;
+    padding:16px;margin-bottom:16px;box-shadow:var(--shadow);
+  }
+  h2{font-size:1rem;margin:0 0 12px}
+  label{display:block;font-size:.85rem;color:var(--sub);margin-bottom:4px;font-weight:700}
+  input[type=date],input[type=text],input[type=number],textarea{
+    width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:8px;
+    background:var(--bg);color:var(--text);font-size:1rem;font-family:inherit;margin-bottom:12px;
+  }
+  textarea{resize:vertical;min-height:70px}
+  input:focus,textarea:focus{outline:2px solid var(--accent);outline-offset:1px}
+  .btn{
+    display:inline-flex;align-items:center;justify-content:center;gap:6px;
+    padding:10px 16px;border:none;border-radius:8px;background:var(--accent);color:#fff;
+    font-size:.95rem;font-weight:700;font-family:inherit;cursor:pointer;min-height:44px;
+  }
+  .btn:hover{background:var(--accent-d)}
+  .btn.sub{background:transparent;color:var(--accent);border:1px solid var(--accent)}
+  .btn.sub:hover{background:rgba(63,107,87,.12)}
+  .btn.danger{background:var(--danger)}
+  .btn.small{padding:6px 10px;font-size:.8rem;min-height:36px}
+  .btn.tiny{padding:4px 8px;font-size:.75rem;min-height:30px}
+  .toolbar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px}
+  .toolbar .btn{flex:1;min-width:150px}
+  .row{display:flex;gap:8px;flex-wrap:wrap}
+  .row .btn{flex:1;min-width:130px}
+  .price-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:0 12px}
+  .count{font-size:.8rem;color:var(--sub);margin:0 0 10px}
+  .table-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
+  table{border-collapse:collapse;width:100%;font-size:.85rem}
+  th,td{border:1px solid var(--line);padding:7px 9px;text-align:right;white-space:nowrap}
+  th:first-child,td:first-child{text-align:left;position:sticky;left:0;background:var(--card)}
+  thead th{background:var(--accent);color:#fff;position:sticky;top:0}
+  thead th:first-child{z-index:2}
+  tbody tr:nth-child(even) td{background:rgba(0,0,0,.02)}
+  @media (prefers-color-scheme: dark){tbody tr:nth-child(even) td{background:rgba(255,255,255,.03)}}
+  .chg{display:block;font-size:.72rem;font-weight:700}
+  .up{color:var(--up)}
+  .down{color:var(--down)}
+  .memo-cell{text-align:left;white-space:normal;min-width:140px;max-width:220px;color:var(--sub);font-size:.8rem}
+  .acts{display:flex;gap:6px;justify-content:flex-end}
+  .empty{text-align:center;color:var(--sub);padding:36px 16px;font-size:.9rem}
+  .hidden{display:none!important}
+  .edit-note{font-size:.82rem;color:var(--danger);font-weight:700;margin-bottom:10px}
+  details.mng{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:0 16px;margin-bottom:16px;box-shadow:var(--shadow)}
+  details.mng summary{cursor:pointer;padding:14px 0;font-weight:700;font-size:.95rem}
+  .mng-item{display:flex;gap:6px;align-items:center;margin-bottom:8px}
+  .mng-item input{margin-bottom:0;flex:1}
+  .foot{text-align:center;font-size:.75rem;color:var(--sub);padding:8px 16px 32px;line-height:1.8}
+  @media (max-width:480px){
+    .wrap{padding:12px}
+    header h1{font-size:1.05rem}
+    .price-grid{grid-template-columns:1fr 1fr}
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>世界の株価 記録帳</h1>
+  <p>毎日の株価・指数を手入力で記録します。データはこのブラウザに保存されます。</p>
+</header>
+
+<div class="wrap">
+
+  <div id="safariWarn" class="card hidden" style="border-color:var(--danger);color:var(--danger)">
+    <strong>ご注意：このブラウザ（Safari）では記録が保存されません。</strong><br>
+    パソコンに保存したHTMLファイルの場合、Safari は閉じると記録を消してしまいます。<br>
+    <strong>Google Chrome でこのファイルを開いて使ってください。</strong>
+    （すでに入力した記録は「データを書き出す（JSON）」で保存し、Chrome側で「読み込む」と移せます）
+  </div>
+
+  <div class="toolbar">
+    <button class="btn sub" id="btnExport">データを書き出す（JSON）</button>
+    <button class="btn sub" id="btnImport">データを読み込む（JSON）</button>
+    <button class="btn sub" id="btnCsv">CSVで書き出す</button>
+    <input type="file" id="fileInput" accept="application/json,.json" class="hidden">
+  </div>
+
+  <div class="card">
+    <h2 id="formTitle">その日の記録を追加</h2>
+    <div id="editNote" class="edit-note hidden">編集中です</div>
+
+    <label for="fDate">日付</label>
+    <input type="date" id="fDate">
+
+    <div id="priceInputs" class="price-grid"></div>
+
+    <label for="fMemo">メモ（任意）</label>
+    <textarea id="fMemo" placeholder="値動きの理由、気づいたことなど"></textarea>
+
+    <div class="row">
+      <button class="btn" id="btnSave">保存する</button>
+      <button class="btn sub hidden" id="btnCancel">編集をやめる</button>
+    </div>
+  </div>
+
+  <details class="mng">
+    <summary>記録する銘柄・指数の管理</summary>
+    <div id="mngList"></div>
+    <div class="mng-item">
+      <input type="text" id="newIndexName" placeholder="例：日経平均、NYダウ、ドル円 など" maxlength="40">
+      <button class="btn small" id="btnAddIndex">追加</button>
+    </div>
+    <p class="count">※銘柄を削除しても、過去の記録に入力済みの数値は残ります。</p>
+  </details>
+
+  <p class="count" id="count"></p>
+  <div class="table-scroll">
+    <table id="tbl" class="hidden">
+      <thead><tr id="thead"></tr></thead>
+      <tbody id="tbody"></tbody>
+    </table>
+  </div>
+  <div id="emptyBox" class="empty">まだ記録がありません。上のフォームから今日の株価を入力してください。</div>
+
+</div>
+
+<div class="foot">
+  外部のサービスやインターネット通信は使いません。すべて無料・オフラインで動きます。<br>
+  データはお使いの端末のブラウザだけに保存されます。ブラウザのデータを消去すると記録も消えるため、
+  ときどき「書き出す（JSON）」で控えを保存してください。読み込みで元に戻せます。
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  // このツール専用の保存キー
+  var STORAGE_KEY = "sekai-kabuka-kirokucho-app-v1";
+
+  var DEFAULT_INDICES = [
+    "日経平均","TOPIX","NYダウ","S&P500","ナスダック総合","上海総合","ドル円"
+  ];
+
+  var state = { indices: [], records: [] };
+  var editingId = null;
+
+  var el = {
+    date: document.getElementById("fDate"),
+    memo: document.getElementById("fMemo"),
+    priceInputs: document.getElementById("priceInputs"),
+    formTitle: document.getElementById("formTitle"),
+    editNote: document.getElementById("editNote"),
+    save: document.getElementById("btnSave"),
+    cancel: document.getElementById("btnCancel"),
+    mngList: document.getElementById("mngList"),
+    newIndexName: document.getElementById("newIndexName"),
+    addIndex: document.getElementById("btnAddIndex"),
+    count: document.getElementById("count"),
+    tbl: document.getElementById("tbl"),
+    thead: document.getElementById("thead"),
+    tbody: document.getElementById("tbody"),
+    emptyBox: document.getElementById("emptyBox"),
+    export: document.getElementById("btnExport"),
+    import: document.getElementById("btnImport"),
+    csv: document.getElementById("btnCsv"),
+    fileInput: document.getElementById("fileInput")
+  };
+
+  function uid(p){ return (p||"x") + Date.now().toString(36) + Math.random().toString(36).slice(2,7); }
+
+  function todayStr(){
+    var d = new Date();
+    return d.getFullYear() + "-" + String(d.getMonth()+1).padStart(2,"0") + "-" + String(d.getDate()).padStart(2,"0");
+  }
+
+  function fmtDate(s){
+    var p = String(s).split("-");
+    if(p.length !== 3) return s;
+    var week = ["日","月","火","水","木","金","土"];
+    var d = new Date(Number(p[0]), Number(p[1])-1, Number(p[2]));
+    var w = isNaN(d.getTime()) ? "" : "（" + week[d.getDay()] + "）";
+    return Number(p[1]) + "/" + Number(p[2]) + w;
+  }
+
+  function fmtNum(v){
+    if(v === null || v === undefined || v === "" || isNaN(v)) return "—";
+    return Number(v).toLocaleString("ja-JP", { maximumFractionDigits: 2 });
+  }
+
+  function esc(s){
+    return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+  }
+
+  function load(){
+    try{
+      var raw = localStorage.getItem(STORAGE_KEY);
+      if(raw){
+        var d = JSON.parse(raw);
+        if(d && Array.isArray(d.indices) && Array.isArray(d.records)){
+          state = d;
+        }
+      }
+    }catch(e){ /* 破損時は初期状態 */ }
+
+    if(!state.indices || state.indices.length === 0){
+      state.indices = DEFAULT_INDICES.map(function(n){ return { id: uid("i"), name: n }; });
+    }
+    if(!state.records) state.records = [];
+  }
+
+  function save(){
+    try{
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    }catch(e){
+      alert("保存できませんでした。ブラウザの空き容量やプライベートモードをご確認ください。");
+    }
+  }
+
+  function sortedRecords(){
+    return state.records.slice().sort(function(a,b){
+      if(a.date !== b.date) return a.date < b.date ? 1 : -1;
+      return (b.created||0) - (a.created||0);
+    });
+  }
+
+  /* ---- 入力フォームの株価欄を再構築 ---- */
+  function buildPriceInputs(values){
+    values = values || {};
+    el.priceInputs.innerHTML = state.indices.map(function(ix){
+      var v = values[ix.id];
+      return '<div>'
+        + '<label for="p_' + ix.id + '">' + esc(ix.name) + '</label>'
+        + '<input type="number" step="any" inputmode="decimal" id="p_' + ix.id + '"'
+        + ' value="' + (v === undefined || v === null ? "" : v) + '" placeholder="数値">'
+        + '</div>';
+    }).join("");
+  }
+
+  /* ---- 銘柄管理リスト ---- */
+  function buildMngList(){
+    el.mngList.innerHTML = state.indices.map(function(ix, i){
+      return '<div class="mng-item">'
+        + '<input type="text" data-name="' + ix.id + '" value="' + esc(ix.name) + '" maxlength="40">'
+        + '<button class="btn tiny sub" data-up="' + ix.id + '"' + (i===0?" disabled":"") + '>↑</button>'
+        + '<button class="btn tiny sub" data-down="' + ix.id + '"' + (i===state.indices.length-1?" disabled":"") + '>↓</button>'
+        + '<button class="btn tiny danger" data-delidx="' + ix.id + '">削除</button>'
+        + '</div>';
+    }).join("");
+  }
+
+  /* ---- 一覧テーブル ---- */
+  function render(){
+    buildMngList();
+    // 編集中でなければ入力欄も銘柄変更に追従
+    if(!editingId) buildPriceInputs(readForm().values);
+
+    var recs = sortedRecords();
+    el.count.textContent = recs.length ? "全 " + recs.length + " 日分の記録" : "";
+
+    if(recs.length === 0){
+      el.tbl.classList.add("hidden");
+      el.emptyBox.classList.remove("hidden");
+      return;
+    }
+    el.tbl.classList.remove("hidden");
+    el.emptyBox.classList.add("hidden");
+
+    el.thead.innerHTML = '<th>日付</th>'
+      + state.indices.map(function(ix){ return '<th>' + esc(ix.name) + '</th>'; }).join("")
+      + '<th>メモ</th><th></th>';
+
+    el.tbody.innerHTML = recs.map(function(r, idx){
+      var prev = recs[idx+1]; // 1つ前（より古い日）
+      var cells = state.indices.map(function(ix){
+        var v = r.values ? r.values[ix.id] : undefined;
+        var out = fmtNum(v);
+        var chg = "";
+        if(prev && prev.values && typeof v === "number" && typeof prev.values[ix.id] === "number"){
+          var d = v - prev.values[ix.id];
+          if(d !== 0){
+            var cls = d > 0 ? "up" : "down";
+            var mark = d > 0 ? "▲" : "▼";
+            var pct = prev.values[ix.id] !== 0 ? (d / prev.values[ix.id] * 100) : 0;
+            chg = '<span class="chg ' + cls + '">' + mark + fmtNum(Math.abs(d))
+                + ' (' + (d>0?"+":"-") + Math.abs(pct).toFixed(2) + '%)</span>';
+          }
+        }
+        return '<td>' + out + chg + '</td>';
+      }).join("");
+      return '<tr>'
+        + '<td>' + esc(fmtDate(r.date)) + '<span class="chg" style="color:var(--sub);font-weight:400">' + esc(r.date) + '</span></td>'
+        + cells
+        + '<td class="memo-cell">' + esc(r.memo || "") + '</td>'
+        + '<td><div class="acts">'
+        + '<button class="btn tiny sub" data-edit="' + r.id + '">編集</button>'
+        + '<button class="btn tiny danger" data-del="' + r.id + '">削除</button>'
+        + '</div></td>'
+        + '</tr>';
+    }).join("");
+  }
+
+  function readForm(){
+    var values = {};
+    state.indices.forEach(function(ix){
+      var inp = document.getElementById("p_" + ix.id);
+      if(inp && inp.value !== ""){
+        var n = parseFloat(inp.value);
+        if(!isNaN(n)) values[ix.id] = n;
+      }
+    });
+    return { date: el.date.value || todayStr(), values: values, memo: el.memo.value.trim() };
+  }
+
+  function resetForm(){
+    editingId = null;
+    el.formTitle.textContent = "その日の記録を追加";
+    el.date.value = todayStr();
+    el.memo.value = "";
+    el.save.textContent = "保存する";
+    el.cancel.classList.add("hidden");
+    el.editNote.classList.add("hidden");
+    buildPriceInputs({});
+  }
+
+  function startEdit(id){
+    var r = state.records.find(function(x){ return x.id === id; });
+    if(!r) return;
+    editingId = id;
+    el.formTitle.textContent = "記録を編集";
+    el.date.value = r.date;
+    el.memo.value = r.memo || "";
+    el.save.textContent = "更新する";
+    el.cancel.classList.remove("hidden");
+    el.editNote.classList.remove("hidden");
+    buildPriceInputs(r.values || {});
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  /* ---- イベント ---- */
+  el.save.addEventListener("click", function(){
+    var f = readForm();
+    if(Object.keys(f.values).length === 0 && !f.memo){
+      alert("少なくとも1つの数値を入力してください。");
+      return;
+    }
+    if(editingId){
+      var r = state.records.find(function(x){ return x.id === editingId; });
+      if(r){ r.date = f.date; r.values = f.values; r.memo = f.memo; r.updated = Date.now(); }
+    }else{
+      var exists = state.records.find(function(x){ return x.date === f.date; });
+      if(exists){
+        if(!confirm(f.date + " の記録はすでにあります。上書きしますか？")) return;
+        exists.values = f.values; exists.memo = f.memo; exists.updated = Date.now();
+      }else{
+        state.records.push({ id: uid("r"), date: f.date, values: f.values, memo: f.memo, created: Date.now() });
+      }
+    }
+    save();
+    resetForm();
+    render();
+  });
+
+  el.cancel.addEventListener("click", resetForm);
+
+  el.tbody.addEventListener("click", function(ev){
+    var t = ev.target;
+    if(t.dataset.edit) startEdit(t.dataset.edit);
+    if(t.dataset.del){
+      if(confirm("この日の記録を削除します。よろしいですか？")){
+        state.records = state.records.filter(function(x){ return x.id !== t.dataset.del; });
+        if(editingId === t.dataset.del) resetForm();
+        save(); render();
+      }
+    }
+  });
+
+  el.addIndex.addEventListener("click", function(){
+    var name = el.newIndexName.value.trim();
+    if(!name) return;
+    state.indices.push({ id: uid("i"), name: name });
+    el.newIndexName.value = "";
+    save(); render();
+  });
+  el.newIndexName.addEventListener("keydown", function(e){ if(e.key === "Enter"){ e.preventDefault(); el.addIndex.click(); } });
+
+  el.mngList.addEventListener("input", function(ev){
+    var id = ev.target.dataset.name;
+    if(!id) return;
+    var ix = state.indices.find(function(x){ return x.id === id; });
+    if(ix){ ix.name = ev.target.value; save(); }
+  });
+
+  el.mngList.addEventListener("click", function(ev){
+    var t = ev.target;
+    var i;
+    if(t.dataset.up){
+      i = state.indices.findIndex(function(x){ return x.id === t.dataset.up; });
+      if(i > 0){ var a = state.indices.splice(i,1)[0]; state.indices.splice(i-1,0,a); save(); render(); }
+    }
+    if(t.dataset.down){
+      i = state.indices.findIndex(function(x){ return x.id === t.dataset.down; });
+      if(i < state.indices.length-1){ var b = state.indices.splice(i,1)[0]; state.indices.splice(i+1,0,b); save(); render(); }
+    }
+    if(t.dataset.delidx){
+      if(confirm("この銘柄を一覧から外します。よろしいですか？（過去の数値データ自体は残ります）")){
+        state.indices = state.indices.filter(function(x){ return x.id !== t.dataset.delidx; });
+        save(); render();
+      }
+    }
+  });
+
+  /* ---- 書き出し / 読み込み ---- */
+  function download(filename, text, type){
+    var blob = new Blob([text], { type: type });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement("a");
+    a.href = url; a.download = filename;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(function(){ URL.revokeObjectURL(url); }, 1000);
+  }
+
+  el.export.addEventListener("click", function(){
+    var payload = { tool: STORAGE_KEY, version: 1, exportedAt: new Date().toISOString(), data: state };
+    download("sekai-kabuka-" + todayStr() + ".json", JSON.stringify(payload, null, 2), "application/json");
+  });
+
+  el.csv.addEventListener("click", function(){
+    if(state.records.length === 0){ alert("記録がありません。"); return; }
+    function q(s){ return '"' + String(s).replace(/"/g,'""') + '"'; }
+    var header = ["日付"].concat(state.indices.map(function(ix){ return ix.name; })).concat(["メモ"]);
+    var rows = sortedRecords().map(function(r){
+      var line = [r.date];
+      state.indices.forEach(function(ix){
+        var v = r.values ? r.values[ix.id] : undefined;
+        line.push(v === undefined || v === null ? "" : v);
+      });
+      line.push(r.memo || "");
+      return line.map(q).join(",");
+    });
+    var csv = "﻿" + [header.map(q).join(",")].concat(rows).join("\r\n");
+    download("sekai-kabuka-" + todayStr() + ".csv", csv, "text/csv");
+  });
+
+  el.import.addEventListener("click", function(){ el.fileInput.click(); });
+
+  el.fileInput.addEventListener("change", function(){
+    var file = el.fileInput.files[0];
+    if(!file) return;
+    var reader = new FileReader();
+    reader.onload = function(){
+      try{
+        var parsed = JSON.parse(reader.result);
+        var d = parsed.data || parsed;
+        if(!d || !Array.isArray(d.indices) || !Array.isArray(d.records)) throw new Error("形式エラー");
+
+        var mode = confirm(
+          "読み込み方法を選んでください。\n\n" +
+          "「OK」＝今のデータに日付単位で追加（同じ日付は読み込むファイルで上書き）\n" +
+          "「キャンセル」＝今のデータをすべて置き換え"
+        );
+
+        if(mode){
+          // 銘柄をマージ（同名は既存を利用）
+          var idMap = {};
+          d.indices.forEach(function(ix){
+            var found = state.indices.find(function(x){ return x.name === ix.name; });
+            if(found){ idMap[ix.id] = found.id; }
+            else{ var nid = uid("i"); state.indices.push({ id: nid, name: ix.name }); idMap[ix.id] = nid; }
+          });
+          d.records.forEach(function(r){
+            var nv = {};
+            Object.keys(r.values || {}).forEach(function(k){ if(idMap[k]) nv[idMap[k]] = r.values[k]; });
+            var ex = state.records.find(function(x){ return x.date === r.date; });
+            if(ex){ ex.values = nv; ex.memo = r.memo || ""; ex.updated = Date.now(); }
+            else{ state.records.push({ id: uid("r"), date: r.date, values: nv, memo: r.memo || "", created: r.created || Date.now() }); }
+          });
+        }else{
+          state = d;
+        }
+        save();
+        resetForm();
+        render();
+        alert("読み込みが完了しました。（全 " + state.records.length + " 日分）");
+      }catch(err){
+        alert("読み込みに失敗しました。このツールで書き出したJSONファイルか確認してください。");
+      }
+      el.fileInput.value = "";
+    };
+    reader.readAsText(file);
+  });
+
+  /* ---- Safari + file:// は保存が消えるため警告 ---- */
+  (function(){
+    var ua = navigator.userAgent;
+    var isSafari = /Safari/.test(ua) && !/Chrome|Chromium|CriOS|Edg|Android/.test(ua);
+    if(isSafari && location.protocol === "file:"){
+      document.getElementById("safariWarn").classList.remove("hidden");
+    }
+  })();
+
+  /* ---- 起動 ---- */
+  load();
+  resetForm();
+  render();
+})();
+</script>
+</body>
+</html>
