@@ -72,8 +72,10 @@
   .row .btn{flex:1;min-width:130px}
   .price-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:0 12px}
   .price-grid input{margin-bottom:2px;text-align:right}
-  .chg-hint{font-size:.72rem;font-weight:700;line-height:1.3;min-height:1.15em;margin-bottom:9px}
+  .chg-hint{font-size:.74rem;font-weight:700;line-height:1.35;min-height:1.2em;margin-bottom:9px}
+  .chg-hint .num{color:var(--text)}
   .chg-hint .sub{color:var(--sub);font-weight:400}
+  .chg-hint .sep{color:var(--line);font-weight:400}
   .count{font-size:.8rem;color:var(--sub);margin:0 0 10px}
   .table-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;cursor:grab;padding-bottom:2px}
   .table-scroll.dragging{cursor:grabbing;user-select:none}
@@ -241,23 +243,7 @@
     return Number(v).toLocaleString("ja-JP", { maximumFractionDigits: 2 });
   }
 
-  // 入力欄の文字列を「3桁ごとにカンマ」の表記に整える（小数もそのまま許可）
-  function formatWithCommas(str){
-    str = String(str).replace(/,/g, "");
-    var neg = /^-/.test(str);
-    str = str.replace(/[^\d.]/g, "");
-    var firstDot = str.indexOf(".");
-    var intPart, decPart;
-    if(firstDot === -1){ intPart = str; decPart = null; }
-    else { intPart = str.slice(0, firstDot); decPart = str.slice(firstDot + 1).replace(/\./g, ""); }
-    intPart = intPart.replace(/^0+(?=\d)/, "");
-    var withCommas = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
-    var res = (neg ? "-" : "") + withCommas;
-    if(decPart !== null) res += "." + decPart.slice(0, 4);
-    return res;
-  }
-
-  // カンマ付き文字列を数値へ
+  // 文字列を数値へ（カンマが混じっていても大丈夫なように）
   function parseNum(str){
     return parseFloat(String(str).replace(/,/g, ""));
   }
@@ -303,11 +289,11 @@
     values = values || {};
     el.priceInputs.innerHTML = state.indices.map(function(ix){
       var v = values[ix.id];
-      var disp = (v === undefined || v === null || v === "") ? "" : formatWithCommas(String(v));
+      var disp = (v === undefined || v === null || v === "") ? "" : v;
       return '<div>'
         + '<label for="p_' + ix.id + '">' + esc(ix.name) + '</label>'
-        + '<input type="text" inputmode="decimal" autocomplete="off" autocorrect="off"'
-        + ' autocapitalize="off" spellcheck="false" id="p_' + ix.id + '" data-ix="' + ix.id + '"'
+        + '<input type="number" step="any" inputmode="decimal" autocomplete="off"'
+        + ' id="p_' + ix.id + '" data-ix="' + ix.id + '"'
         + ' value="' + disp + '" placeholder="数値">'
         + '<div class="chg-hint" id="h_' + ix.id + '"></div>'
         + '</div>';
@@ -328,25 +314,39 @@
     return null;
   }
 
-  // 各入力欄の下に「前日比 ▲◯◯ (+◯%)」を表示・更新
+  // 各入力欄の下に「38,500 ／ 前日比 ▲◯◯ (+◯%)」を表示・更新
   function updateChgHint(inp){
     var ixId = inp.dataset.ix;
     var hint = document.getElementById("h_" + ixId);
     if(!hint) return;
     var base = prevValueFor(ixId);
-    if(base === null){ hint.innerHTML = ""; return; }
     var cur = parseNum(inp.value);
-    if(isNaN(cur)){
-      hint.innerHTML = '<span class="sub">前回 ' + fmtNum(base) + '</span>';
-      return;
+    var parts = [];
+
+    // 入力した数値を3桁カンマ付きで表示（入力欄の下）
+    if(!isNaN(cur)){
+      parts.push('<span class="num">' + fmtNum(cur) + '</span>');
     }
-    var d = cur - base;
-    if(d === 0){ hint.innerHTML = '<span class="sub">前日比 &plusmn;0</span>'; return; }
-    var cls = d > 0 ? "up" : "down";
-    var mark = d > 0 ? "▲" : "▼";
-    var pct = base !== 0 ? (d / base * 100) : 0;
-    hint.innerHTML = '<span class="' + cls + '">前日比 ' + mark + fmtNum(Math.abs(d))
-      + ' (' + (d > 0 ? "+" : "-") + Math.abs(pct).toFixed(2) + '%)</span>';
+
+    // 前日比（前の記録があるときだけ）
+    if(base !== null){
+      if(isNaN(cur)){
+        parts.push('<span class="sub">前回 ' + fmtNum(base) + '</span>');
+      }else{
+        var d = cur - base;
+        if(d === 0){
+          parts.push('<span class="sub">前日比 &plusmn;0</span>');
+        }else{
+          var cls = d > 0 ? "up" : "down";
+          var mark = d > 0 ? "▲" : "▼";
+          var pct = base !== 0 ? (d / base * 100) : 0;
+          parts.push('<span class="' + cls + '">前日比 ' + mark + fmtNum(Math.abs(d))
+            + ' (' + (d > 0 ? "+" : "-") + Math.abs(pct).toFixed(2) + '%)</span>');
+        }
+      }
+    }
+
+    hint.innerHTML = parts.join('<span class="sep"> ／ </span>');
   }
 
   function refreshAllHints(){
@@ -565,32 +565,17 @@
 
   el.cancel.addEventListener("click", resetForm);
 
-  // 整形して入れ直すヘルパー（カンマ付けと前日比更新）
-  function formatPriceInput(inp){
-    if(!inp || inp.tagName !== "INPUT") return;
-    var f = formatWithCommas(inp.value);
-    if(f !== inp.value) inp.value = f;
-    updateChgHint(inp);
-  }
-
-  // 株価欄：入力中は前日比だけ更新（カンマ整形は欄を離れたとき＝下の blur で行う。
-  // スマホで打っている最中に値を書き換えると入力を取りこぼす端末があるため）
+  // 株価欄：入力するたびに、欄の下の「カンマ付き数値／前日比」を更新（欄の中身はさわらない）
   el.priceInputs.addEventListener("input", function(ev){
     if(ev.target.tagName === "INPUT") updateChgHint(ev.target);
   });
 
-  // 株価欄：入力を終えて欄を離れたら3桁カンマに整形（blur はバブルしないので capture で拾う）
-  el.priceInputs.addEventListener("blur", function(ev){
-    formatPriceInput(ev.target);
-  }, true);
-
-  // 株価欄：エンターで次のマスへ（最後はメモへ）。移動前に今の欄を整形
+  // 株価欄：エンターで次のマスへ（最後はメモへ）。数値はそのまま、カーソルだけ動く
   el.priceInputs.addEventListener("keydown", function(ev){
     if(ev.key !== "Enter") return;
     ev.preventDefault();
     var inputs = Array.prototype.slice.call(el.priceInputs.querySelectorAll("input"));
     var i = inputs.indexOf(ev.target);
-    formatPriceInput(ev.target);
     if(i > -1 && i < inputs.length - 1) inputs[i + 1].focus();
     else el.memo.focus();
   });
