@@ -97,6 +97,7 @@
   .empty{text-align:center;color:var(--sub);padding:36px 16px;font-size:.9rem}
   .hidden{display:none!important}
   .edit-note{font-size:.82rem;color:var(--danger);font-weight:700;margin-bottom:10px}
+  .date-note{font-size:.82rem;color:var(--accent-d);font-weight:700;margin:-4px 0 12px;background:rgba(63,107,87,.12);padding:8px 10px;border-radius:8px}
   details.mng{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:0 16px;margin-bottom:16px;box-shadow:var(--shadow)}
   details.mng summary{cursor:pointer;padding:14px 0;font-weight:700;font-size:.95rem}
   .mng-item{display:flex;gap:6px;align-items:center;margin-bottom:8px}
@@ -137,6 +138,7 @@
 
     <label for="fDate">日付</label>
     <input type="date" id="fDate">
+    <p id="dateExistsNote" class="date-note hidden"></p>
 
     <div id="priceInputs" class="price-grid"></div>
 
@@ -197,6 +199,7 @@
     priceInputs: document.getElementById("priceInputs"),
     formTitle: document.getElementById("formTitle"),
     editNote: document.getElementById("editNote"),
+    dateExistsNote: document.getElementById("dateExistsNote"),
     save: document.getElementById("btnSave"),
     cancel: document.getElementById("btnCancel"),
     mngList: document.getElementById("mngList"),
@@ -351,6 +354,24 @@
     });
   }
 
+  // 「その日の記録を追加」で、選んだ日付にすでに記録があるとき注意書きを出す
+  function recordForDate(d){
+    return state.records.find(function(x){ return x.date === d; });
+  }
+  function updateDateNote(){
+    if(!el.dateExistsNote) return;
+    var d = el.date.value;
+    if(editingId || !d || !recordForDate(d)){
+      el.dateExistsNote.classList.add("hidden");
+      el.dateExistsNote.textContent = "";
+      return;
+    }
+    el.dateExistsNote.textContent =
+      "この日はすでに記録があります。保存すると、入力した欄だけ追加・更新します"
+      + "（空欄の項目は今の数値をそのまま残します）。";
+    el.dateExistsNote.classList.remove("hidden");
+  }
+
   /* ---- 銘柄管理リスト ---- */
   function buildMngList(){
     el.mngList.innerHTML = state.indices.map(function(ix, i){
@@ -372,6 +393,7 @@
       try{ keep = readForm().values; }catch(e){}
       buildPriceInputs(keep);
     }
+    updateDateNote();
 
     var recs = sortedRecords();
     el.count.textContent = recs.length ? "全 " + recs.length + " 日分の記録" : "";
@@ -480,6 +502,7 @@
     el.cancel.classList.add("hidden");
     el.editNote.classList.add("hidden");
     buildPriceInputs({});
+    updateDateNote();
   }
 
   function startEdit(id){
@@ -493,6 +516,7 @@
     el.cancel.classList.remove("hidden");
     el.editNote.classList.remove("hidden");
     buildPriceInputs(r.values || {});
+    updateDateNote();
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
@@ -505,12 +529,27 @@
     }
     if(editingId){
       var r = state.records.find(function(x){ return x.id === editingId; });
-      if(r){ r.date = f.date; r.values = f.values; r.memo = f.memo; r.updated = Date.now(); }
+      if(r){
+        // 編集画面は全項目が表示されているので入力どおりに置き換え。
+        // ただし「元は数値があったのに全部空」は事故の可能性が高いので確認する。
+        var hadValues = r.values && Object.keys(r.values).length > 0;
+        if(hadValues && Object.keys(f.values).length === 0){
+          if(!confirm("数値の欄がすべて空です。この日の数値をすべて消して、メモだけにしますか？")) return;
+        }
+        r.date = f.date; r.values = f.values; r.memo = f.memo; r.updated = Date.now();
+      }
     }else{
       var exists = state.records.find(function(x){ return x.date === f.date; });
       if(exists){
-        if(!confirm(f.date + " の記録はすでにあります。上書きしますか？")) return;
-        exists.values = f.values; exists.memo = f.memo; exists.updated = Date.now();
+        if(!confirm(
+          fmtDate(f.date) + " はすでに記録があります。\n\n" +
+          "入力した欄だけを追加・更新します。\n空欄の項目は、今保存されている数値をそのまま残します。\n\n" +
+          "よろしいですか？"
+        )) return;
+        // マージ：既存の値を保ち、入力された分だけ上書き・追加
+        exists.values = Object.assign({}, exists.values || {}, f.values);
+        if(f.memo) exists.memo = f.memo;   // メモは入力があったときだけ更新
+        exists.updated = Date.now();
       }else{
         state.records.push({ id: uid("r"), date: f.date, values: f.values, memo: f.memo, created: Date.now() });
       }
@@ -552,8 +591,9 @@
     else el.memo.focus();
   });
 
-  // 日付を変えたら前日比の基準も変わるので再計算
-  el.date.addEventListener("change", refreshAllHints);
+  // 日付を変えたら前日比の基準も変わるので再計算＋既存記録の注意書き
+  el.date.addEventListener("change", function(){ refreshAllHints(); updateDateNote(); });
+  el.date.addEventListener("input", updateDateNote);
 
   el.tbody.addEventListener("click", function(ev){
     var t = ev.target;
