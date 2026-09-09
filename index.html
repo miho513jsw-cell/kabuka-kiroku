@@ -738,14 +738,23 @@
         var d = parsed.data || parsed;
         if(!d || !Array.isArray(d.indices) || !Array.isArray(d.records)) throw new Error("形式エラー");
 
-        var mode = confirm(
+        // まず「本当に読み込むか」を確認（ここでキャンセルすれば何も起きない）
+        if(!confirm(
+          "この控えファイルを読み込みます。よろしいですか？\n\n" +
+          "（ファイルの中身：全 " + d.records.length + " 日分）"
+        )){ el.fileInput.value = ""; return; }
+
+        // 次に「足す」か「全部入れ替える」かを選ぶ
+        var merge = confirm(
           "読み込み方法を選んでください。\n\n" +
-          "「OK」＝今のデータに日付単位で追加（同じ日付は読み込むファイルで上書き）\n" +
-          "「キャンセル」＝今のデータをすべて置き換え"
+          "【OK】今の記録に、ファイルの記録を足す（おすすめ）\n" +
+          "　同じ日付は、ファイルにある項目だけ上書きし、他はそのまま残します。\n" +
+          "　パソコンとiPhoneの記録を1つにまとめたいときはこちら。\n\n" +
+          "【キャンセル】今の記録をすべて消して、ファイルの内容だけにする"
         );
 
-        if(mode){
-          // 銘柄をマージ（同名は既存を利用）
+        if(merge){
+          // 銘柄（項目）をマージ（同名は既存を利用、無いものは追加）
           var idMap = {};
           d.indices.forEach(function(ix){
             var found = state.indices.find(function(x){ return x.name === ix.name; });
@@ -756,8 +765,14 @@
             var nv = {};
             Object.keys(r.values || {}).forEach(function(k){ if(idMap[k]) nv[idMap[k]] = r.values[k]; });
             var ex = state.records.find(function(x){ return x.date === r.date; });
-            if(ex){ ex.values = nv; ex.memo = r.memo || ""; ex.updated = Date.now(); }
-            else{ state.records.push({ id: uid("r"), date: r.date, values: nv, memo: r.memo || "", created: r.created || Date.now() }); }
+            if(ex){
+              // 日付が同じでも、項目ごとにマージ（ファイルの値を優先し、無い項目は残す）
+              ex.values = Object.assign({}, ex.values || {}, nv);
+              if(r.memo) ex.memo = r.memo;
+              ex.updated = Date.now();
+            }else{
+              state.records.push({ id: uid("r"), date: r.date, values: nv, memo: r.memo || "", created: r.created || Date.now() });
+            }
           });
         }else{
           state = d;
