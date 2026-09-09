@@ -98,6 +98,7 @@
   .hidden{display:none!important}
   .edit-note{font-size:.82rem;color:var(--danger);font-weight:700;margin-bottom:10px}
   .date-note{font-size:.82rem;color:var(--accent-d);font-weight:700;margin:-4px 0 12px;background:rgba(63,107,87,.12);padding:8px 10px;border-radius:8px}
+  .io-msg{font-size:.85rem;color:var(--accent-d);font-weight:700;margin:-8px 0 16px;background:rgba(63,107,87,.12);padding:10px 12px;border-radius:8px}
   details.mng{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:0 16px;margin-bottom:16px;box-shadow:var(--shadow)}
   details.mng summary{cursor:pointer;padding:14px 0;font-weight:700;font-size:.95rem}
   .mng-item{display:flex;gap:6px;align-items:center;margin-bottom:8px}
@@ -122,15 +123,16 @@
     <strong>ご注意：このブラウザ（Safari）では記録が保存されません。</strong><br>
     パソコンに保存したHTMLファイルの場合、Safari は閉じると記録を消してしまいます。<br>
     <strong>Google Chrome でこのファイルを開いて使ってください。</strong>
-    （すでに入力した記録は「データを書き出す（JSON）」で保存し、Chrome側で「読み込む」と移せます）
+    （すでに入力した記録は「控え（バックアップ）を保存」で書き出し、Chrome側で「控えから記録を戻す」と移せます）
   </div>
 
   <div class="toolbar">
-    <button class="btn sub" id="btnExport">データを書き出す（JSON）</button>
-    <button class="btn sub" id="btnImport">データを読み込む（JSON）</button>
-    <button class="btn sub" id="btnCsv">CSVで書き出す</button>
+    <button class="btn sub" id="btnExport">控え（バックアップ）を保存</button>
+    <button class="btn sub" id="btnImport">控えから記録を戻す</button>
+    <button class="btn sub" id="btnCsv">CSVで書き出す（表計算用）</button>
     <input type="file" id="fileInput" accept="application/json,.json" class="hidden">
   </div>
+  <p id="ioMsg" class="io-msg hidden"></p>
 
   <div class="card">
     <h2 id="formTitle">その日の記録を追加</h2>
@@ -175,8 +177,9 @@
 
 <div class="foot">
   外部のサービスやインターネット通信は使いません。すべて無料・オフラインで動きます。<br>
-  データはお使いの端末のブラウザだけに保存されます。ブラウザのデータを消去すると記録も消えるため、
-  ときどき「書き出す（JSON）」で控えを保存してください。読み込みで元に戻せます。
+  データはお使いの端末のブラウザだけに保存されます。ブラウザのデータを消去したり端末を変えると記録が消えるため、
+  ときどき上の「控え（バックアップ）を保存」を押して控えファイルを取っておいてください。<br>
+  もし記録が消えても「控えから記録を戻す」でそのファイルを選べば元に戻せます。
 </div>
 
 <script>
@@ -210,6 +213,7 @@
     thead: document.getElementById("thead"),
     tbody: document.getElementById("tbody"),
     emptyBox: document.getElementById("emptyBox"),
+    ioMsg: document.getElementById("ioMsg"),
     export: document.getElementById("btnExport"),
     import: document.getElementById("btnImport"),
     csv: document.getElementById("btnCsv"),
@@ -646,7 +650,25 @@
   });
 
   /* ---- 書き出し / 読み込み ---- */
-  function download(filename, text, type){
+
+  // ツールバー下の案内メッセージを数秒表示
+  var ioMsgTimer = null;
+  function showIoMsg(text){
+    if(!el.ioMsg) return;
+    el.ioMsg.textContent = text;
+    el.ioMsg.classList.remove("hidden");
+    if(ioMsgTimer) clearTimeout(ioMsgTimer);
+    ioMsgTimer = setTimeout(function(){ el.ioMsg.classList.add("hidden"); }, 8000);
+  }
+
+  // スマホ・タブレット判定（iPad は Mac と名乗るのでタッチ数でも見る）
+  function isTouchDevice(){
+    return /iPhone|iPad|iPod|Android/i.test(navigator.userAgent)
+      || (navigator.maxTouchPoints > 1 && /Macintosh/.test(navigator.userAgent));
+  }
+
+  // パソコン向け：そのままファイルをダウンロード
+  function downloadFile(filename, text, type){
     var blob = new Blob([text], { type: type });
     var url = URL.createObjectURL(blob);
     var a = document.createElement("a");
@@ -655,9 +677,35 @@
     setTimeout(function(){ URL.revokeObjectURL(url); }, 1000);
   }
 
+  // ファイルを保存する。スマホなら共有シート（「"ファイル"に保存」など）を出す
+  function saveFile(filename, text, type, okMsg){
+    var file = null;
+    try{ file = new File([text], filename, { type: type }); }catch(e){}
+
+    if(isTouchDevice() && file && navigator.share && navigator.canShare
+       && navigator.canShare({ files: [file] })){
+      navigator.share({ files: [file], title: filename }).then(function(){
+        showIoMsg("控えを書き出しました。「\"ファイル\"に保存」を選んだ場合は「ファイル」アプリに入っています。");
+      }).catch(function(err){
+        if(err && err.name === "AbortError") return; // キャンセルは何もしない
+        downloadFile(filename, text, type);
+        if(okMsg) showIoMsg(okMsg);
+      });
+      return;
+    }
+
+    downloadFile(filename, text, type);
+    if(okMsg) showIoMsg(okMsg);
+  }
+
   el.export.addEventListener("click", function(){
     var payload = { tool: STORAGE_KEY, version: 1, exportedAt: new Date().toISOString(), data: state };
-    download("sekai-kabuka-" + todayStr() + ".json", JSON.stringify(payload, null, 2), "application/json");
+    saveFile(
+      "sekai-kabuka-" + todayStr() + ".json",
+      JSON.stringify(payload, null, 2),
+      "application/json",
+      "控え（バックアップ）を書き出しました。ダウンロード先に保存されています。"
+    );
   });
 
   el.csv.addEventListener("click", function(){
@@ -674,7 +722,8 @@
       return line.map(q).join(",");
     });
     var csv = "﻿" + [header.map(q).join(",")].concat(rows).join("\r\n");
-    download("sekai-kabuka-" + todayStr() + ".csv", csv, "text/csv");
+    saveFile("sekai-kabuka-" + todayStr() + ".csv", csv, "text/csv",
+      "CSVを書き出しました。ExcelやGoogleスプレッドシートで開けます。");
   });
 
   el.import.addEventListener("click", function(){ el.fileInput.click(); });
