@@ -292,7 +292,8 @@
       var disp = (v === undefined || v === null || v === "") ? "" : formatWithCommas(String(v));
       return '<div>'
         + '<label for="p_' + ix.id + '">' + esc(ix.name) + '</label>'
-        + '<input type="text" inputmode="decimal" autocomplete="off" id="p_' + ix.id + '" data-ix="' + ix.id + '"'
+        + '<input type="text" inputmode="decimal" autocomplete="off" autocorrect="off"'
+        + ' autocapitalize="off" spellcheck="false" id="p_' + ix.id + '" data-ix="' + ix.id + '"'
         + ' value="' + disp + '" placeholder="数値">'
         + '<div class="chg-hint" id="h_' + ix.id + '"></div>'
         + '</div>';
@@ -336,8 +337,10 @@
 
   function refreshAllHints(){
     state.indices.forEach(function(ix){
-      var inp = document.getElementById("p_" + ix.id);
-      if(inp) updateChgHint(inp);
+      try{
+        var inp = document.getElementById("p_" + ix.id);
+        if(inp) updateChgHint(inp);
+      }catch(e){ /* 1つの銘柄で失敗しても他に影響させない */ }
     });
   }
 
@@ -356,8 +359,12 @@
   /* ---- 一覧テーブル ---- */
   function render(){
     buildMngList();
-    // 編集中でなければ入力欄も銘柄変更に追従
-    if(!editingId) buildPriceInputs(readForm().values);
+    // 編集中でなければ入力欄も銘柄変更に追従（入力途中の値は保持）
+    if(!editingId){
+      var keep = {};
+      try{ keep = readForm().values; }catch(e){}
+      buildPriceInputs(keep);
+    }
 
     var recs = sortedRecords();
     el.count.textContent = recs.length ? "全 " + recs.length + " 日分の記録" : "";
@@ -467,39 +474,34 @@
 
   el.cancel.addEventListener("click", resetForm);
 
-  // 株価欄：入力するたびに3桁カンマへ整形しつつカーソル位置を保つ＋前日比を更新
-  el.priceInputs.addEventListener("input", function(ev){
-    var inp = ev.target;
-    if(inp.tagName !== "INPUT") return;
-    var old = inp.value;
-    var pos = inp.selectionStart == null ? old.length : inp.selectionStart;
-    var digitsBefore = old.slice(0, pos).replace(/[^\d]/g, "").length;
-    var formatted = formatWithCommas(old);
-    if(formatted !== old){
-      inp.value = formatted;
-      var i = 0, seen = 0;
-      while(i < formatted.length && seen < digitsBefore){
-        if(/\d/.test(formatted.charAt(i))) seen++;
-        i++;
-      }
-      try{ inp.setSelectionRange(i, i); }catch(e){}
-    }
+  // 整形して入れ直すヘルパー（カンマ付けと前日比更新）
+  function formatPriceInput(inp){
+    if(!inp || inp.tagName !== "INPUT") return;
+    var f = formatWithCommas(inp.value);
+    if(f !== inp.value) inp.value = f;
     updateChgHint(inp);
+  }
+
+  // 株価欄：入力中は前日比だけ更新（カンマ整形は欄を離れたとき＝下の blur で行う。
+  // スマホで打っている最中に値を書き換えると入力を取りこぼす端末があるため）
+  el.priceInputs.addEventListener("input", function(ev){
+    if(ev.target.tagName === "INPUT") updateChgHint(ev.target);
   });
 
-  // 株価欄：エンターで次のマスへ（最後はメモへ）
+  // 株価欄：入力を終えて欄を離れたら3桁カンマに整形（blur はバブルしないので capture で拾う）
+  el.priceInputs.addEventListener("blur", function(ev){
+    formatPriceInput(ev.target);
+  }, true);
+
+  // 株価欄：エンターで次のマスへ（最後はメモへ）。移動前に今の欄を整形
   el.priceInputs.addEventListener("keydown", function(ev){
     if(ev.key !== "Enter") return;
     ev.preventDefault();
     var inputs = Array.prototype.slice.call(el.priceInputs.querySelectorAll("input"));
     var i = inputs.indexOf(ev.target);
-    if(i > -1 && i < inputs.length - 1){
-      var nx = inputs[i + 1];
-      nx.focus();
-      try{ nx.setSelectionRange(nx.value.length, nx.value.length); }catch(e){}
-    }else{
-      el.memo.focus();
-    }
+    formatPriceInput(ev.target);
+    if(i > -1 && i < inputs.length - 1) inputs[i + 1].focus();
+    else el.memo.focus();
   });
 
   // 日付を変えたら前日比の基準も変わるので再計算
@@ -521,8 +523,11 @@
     var name = el.newIndexName.value.trim();
     if(!name) return;
     state.indices.push({ id: uid("i"), name: name });
+    save();
+    render();
+    // 追加できたら入力欄を空に戻す（render の後にも実行して確実にクリア）
     el.newIndexName.value = "";
-    save(); render();
+    el.newIndexName.blur();
   });
   el.newIndexName.addEventListener("keydown", function(e){ if(e.key === "Enter"){ e.preventDefault(); el.addIndex.click(); } });
 
