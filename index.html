@@ -169,7 +169,7 @@
     <summary>記録する銘柄・指数の管理</summary>
     <div id="mngList"></div>
     <div class="mng-item">
-      <input type="text" id="newIndexName" placeholder="例：日経平均、NYダウ、ドル円 など" maxlength="40">
+      <input type="text" id="newIndexName" placeholder="例：日経平均、NYダウ、ドル円 など" maxlength="40" autocomplete="off" autocorrect="off" autocapitalize="off">
       <button class="btn small" id="btnAddIndex">追加</button>
     </div>
     <p class="count">※銘柄を削除しても、過去の記録に入力済みの数値は残ります。</p>
@@ -718,9 +718,9 @@
     state.indices.push({ id: uid("i"), name: name });
     save();
     render();
-    // 追加できたら入力欄を空に戻す（render の後にも実行して確実にクリア）
+    // 追加できたら入力欄を空にして、そのまま次の銘柄を打てるようカーソルを戻す
     el.newIndexName.value = "";
-    el.newIndexName.blur();
+    el.newIndexName.focus();
   });
   el.newIndexName.addEventListener("keydown", function(e){ if(e.key === "Enter"){ e.preventDefault(); el.addIndex.click(); } });
 
