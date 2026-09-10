@@ -8,6 +8,7 @@
   :root{
     --bg:#f4f1ea;
     --card:#ffffff;
+    --row-alt:#f5f2ec;
     --text:#2b2b2b;
     --sub:#6b6b6b;
     --line:#e0dbd0;
@@ -22,6 +23,7 @@
     :root{
       --bg:#1c1e1d;
       --card:#272a29;
+      --row-alt:#2e3230;
       --text:#e9e7e1;
       --sub:#a7a49b;
       --line:#3a3e3c;
@@ -87,10 +89,13 @@
   table{border-collapse:collapse;width:100%;font-size:.85rem}
   th,td{border:1px solid var(--line);padding:7px 9px;text-align:right;white-space:nowrap}
   th:first-child,td:first-child{text-align:left;position:sticky;left:0;background:var(--card)}
+  tbody td:first-child{z-index:1}
   thead th{background:var(--accent);color:#fff;position:sticky;top:0}
-  thead th:first-child{z-index:2}
-  tbody tr:nth-child(even) td{background:rgba(0,0,0,.02)}
-  @media (prefers-color-scheme: dark){tbody tr:nth-child(even) td{background:rgba(255,255,255,.03)}}
+  thead th:first-child{z-index:2;background:var(--accent);color:#fff}
+  tbody tr:nth-child(even) td{background:var(--row-alt)}
+  /* 横スクロール時に日付の列が透けないよう、固定列は必ず不透明にする */
+  tbody tr td:first-child{background:var(--card)}
+  tbody tr:nth-child(even) td:first-child{background:var(--row-alt)}
   .chg{display:block;font-size:.72rem;font-weight:700}
   .up{color:var(--up)}
   .down{color:var(--down)}
