@@ -379,7 +379,7 @@
       var disp = (v === undefined || v === null || v === "") ? "" : v;
       return '<div>'
         + '<label for="p_' + ix.id + '">' + esc(ix.name) + '</label>'
-        + '<input type="number" step="any" inputmode="decimal" autocomplete="off"'
+        + '<input type="text" inputmode="decimal" autocomplete="off" autocorrect="off" autocapitalize="off"'
         + ' id="p_' + ix.id + '" data-ix="' + ix.id + '"'
         + ' value="' + disp + '" placeholder="数値">'
         + '<div class="chg-hint" id="h_' + ix.id + '"></div>'
@@ -657,20 +657,41 @@
     if(ev.target.tagName === "INPUT") updateChgHint(ev.target);
   });
 
-  // 株価欄：エンター／下矢印で次のマスへ（最後はメモへ）、上矢印で前のマスへ。
-  // 数値はそのまま、カーソル（入力位置）だけ動く。
-  // ※上下矢印は本来「数値を1ずつ増減」する動きなので、それを止めてマス移動に使う。
-  //   左右矢印はマスの中で文字の位置を動かすために、そのまま残す。
+  // 株価欄で数字以外が入らないようにする（すでに入っている値は一切さわらない）
+  el.priceInputs.addEventListener("beforeinput", function(ev){
+    if(ev.target.tagName !== "INPUT") return;
+    if(ev.data != null && /[^0-9.,\-]/.test(ev.data)) ev.preventDefault();
+  });
+
+  // 株価欄でのカーソル移動（キーボードだけで前後のマスに動けるように）
+  //  ・エンター／↓／→（文字の右端で）→ 次のマスへ（最後はメモへ）
+  //  ・↑／←（文字の左端で）→ 前のマスへ
+  //  ・← → は、マスの中に文字が残っているうちは今までどおり文字の間を動く
+  function focusField(inp, toEnd){
+    inp.focus();
+    try{ var p = toEnd ? inp.value.length : 0; inp.setSelectionRange(p, p); }catch(e){}
+  }
   el.priceInputs.addEventListener("keydown", function(ev){
-    if(ev.key !== "Enter" && ev.key !== "ArrowDown" && ev.key !== "ArrowUp") return;
+    var k = ev.key;
+    if(k !== "Enter" && k !== "ArrowDown" && k !== "ArrowUp" && k !== "ArrowLeft" && k !== "ArrowRight") return;
     var inputs = Array.prototype.slice.call(el.priceInputs.querySelectorAll("input"));
     var i = inputs.indexOf(ev.target);
     if(i < 0) return;
+
+    var atStart, atEnd;
+    try{
+      atStart = ev.target.selectionStart === 0 && ev.target.selectionEnd === 0;
+      atEnd = ev.target.selectionStart === ev.target.value.length && ev.target.selectionEnd === ev.target.value.length;
+    }catch(e){ atStart = atEnd = true; }
+
+    if(k === "ArrowLeft" && !atStart) return;   // マスの中で文字を移動
+    if(k === "ArrowRight" && !atEnd) return;
+
     ev.preventDefault();
-    if(ev.key === "ArrowUp"){
-      if(i > 0) inputs[i - 1].focus();
-    }else{ // Enter または ArrowDown
-      if(i < inputs.length - 1) inputs[i + 1].focus();
+    if(k === "ArrowUp" || k === "ArrowLeft"){
+      if(i > 0) focusField(inputs[i - 1], true);
+    }else{
+      if(i < inputs.length - 1) focusField(inputs[i + 1], k !== "ArrowRight");
       else el.memo.focus();
     }
   });
