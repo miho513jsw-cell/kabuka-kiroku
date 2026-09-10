@@ -128,6 +128,16 @@
     （すでに入力した記録は「控え（バックアップ）を保存」で書き出し、Chrome側で「控えから記録を戻す」と移せます）
   </div>
 
+  <div id="recoverBanner" class="card hidden" style="border-color:var(--accent);background:rgba(63,107,87,.10)">
+    <strong>記録が見つからなかったので、自動の控えから戻しました。</strong><br>
+    <span id="recoverInfo"></span><br>
+    内容をご確認ください。念のため今すぐ「控え（バックアップ）を保存」でファイルにも取っておくと安心です。
+    <div class="row" style="margin-top:10px">
+      <button class="btn sub small" id="btnRecoverOther">別の控えから戻す</button>
+      <button class="btn sub small" id="btnRecoverDismiss">閉じる</button>
+    </div>
+  </div>
+
   <div class="toolbar">
     <button class="btn sub" id="btnExport">控え（バックアップ）を保存</button>
     <button class="btn sub" id="btnImport">控えから記録を戻す</button>
@@ -163,6 +173,9 @@
       <button class="btn small" id="btnAddIndex">追加</button>
     </div>
     <p class="count">※銘柄を削除しても、過去の記録に入力済みの数値は残ります。</p>
+    <hr style="border:none;border-top:1px solid var(--line);margin:12px 0">
+    <button class="btn small sub" id="btnRestoreBackup">自動の控えから記録を戻す</button>
+    <p class="count">記録が消えてしまったときの緊急用です。このブラウザが自動でとっている控え（最大7件）から選んで戻せます。</p>
   </details>
 
   <p class="count" id="count"></p>
@@ -252,26 +265,100 @@
     return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
   }
 
+  // ---- 自動バックアップ（記録が消える事故に備えて、ブラウザ内に控えを残す） ----
+  var PREV_KEY = STORAGE_KEY + "-prev";      // 直前に保存した内容（1つ前に戻す用）
+  var BK_KEY   = STORAGE_KEY + "-backups";   // 日付つきの控え（最大7件）
+  var recovered = false;                     // 起動時にバックアップから復元したか
+
+  function contentSize(s){
+    // 「中身のある記録か」をざっくり測る（records の数 ＋ 入力済みの数値の数）
+    try{
+      var d = (typeof s === "string") ? JSON.parse(s) : s;
+      if(!d || !Array.isArray(d.records)) return -1;
+      var n = d.records.length;
+      d.records.forEach(function(r){ n += Object.keys(r.values || {}).length; });
+      return n;
+    }catch(e){ return -1; }
+  }
+
+  function readBackups(){
+    try{ return JSON.parse(localStorage.getItem(BK_KEY)) || []; }catch(e){ return []; }
+  }
+
+  function autoBackup(json){
+    var list = readBackups();
+    var last = list[list.length - 1];
+    var today = todayStr();
+    // 同じ日は上書き、日が変わったら新しい控えを足す（最大7件、古いものから消す）
+    if(last && last.date === today){ last.json = json; }
+    else{ list.push({ date: today, at: Date.now(), json: json }); }
+    while(list.length > 7) list.shift();
+    try{ localStorage.setItem(BK_KEY, JSON.stringify(list)); }catch(e){}
+  }
+
+  // 一番中身の多いバックアップを返す（無ければ null）
+  function bestBackup(){
+    var cands = readBackups().slice();
+    var prev = null;
+    try{ prev = localStorage.getItem(PREV_KEY); }catch(e){}
+    if(prev) cands.push({ date: "(直前)", at: Date.now(), json: prev });
+    var best = null, bestN = 0;
+    cands.forEach(function(c){
+      var n = contentSize(c.json);
+      if(n > bestN){ bestN = n; best = c; }
+    });
+    return best;
+  }
+
   function load(){
+    var parsed = null;
     try{
       var raw = localStorage.getItem(STORAGE_KEY);
       if(raw){
         var d = JSON.parse(raw);
         if(d && Array.isArray(d.indices) && Array.isArray(d.records)){
-          state = d;
+          parsed = d;
         }
       }
-    }catch(e){ /* 破損時は初期状態 */ }
+    }catch(e){ /* 破損時は下でバックアップを探す */ }
+
+    // 保存が消えている／中身がほぼ空 なのに、バックアップには記録がある → 自動で復元
+    if(contentSize(parsed) <= 0){
+      var bk = bestBackup();
+      if(bk && contentSize(bk.json) > 0){
+        try{
+          var b = JSON.parse(bk.json);
+          if(b && Array.isArray(b.indices) && Array.isArray(b.records)){
+            parsed = b;
+            recovered = true;
+          }
+        }catch(e){}
+      }
+    }
+
+    if(parsed) state = parsed;
 
     if(!state.indices || state.indices.length === 0){
       state.indices = DEFAULT_INDICES.map(function(n){ return { id: uid("i"), name: n }; });
     }
     if(!state.records) state.records = [];
+
+    if(recovered){
+      // 復元した内容をすぐ保存し直しておく
+      try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }catch(e){}
+    }
   }
 
   function save(){
     try{
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+      var json = JSON.stringify(state);
+      // 今保存されている内容を「1つ前」として退避
+      try{
+        var cur = localStorage.getItem(STORAGE_KEY);
+        if(cur && cur !== json) localStorage.setItem(PREV_KEY, cur);
+      }catch(e){}
+      localStorage.setItem(STORAGE_KEY, json);
+      autoBackup(json);
     }catch(e){
       alert("保存できませんでした。ブラウザの空き容量やプライベートモードをご確認ください。");
     }
@@ -570,14 +657,22 @@
     if(ev.target.tagName === "INPUT") updateChgHint(ev.target);
   });
 
-  // 株価欄：エンターで次のマスへ（最後はメモへ）。数値はそのまま、カーソルだけ動く
+  // 株価欄：エンター／下矢印で次のマスへ（最後はメモへ）、上矢印で前のマスへ。
+  // 数値はそのまま、カーソル（入力位置）だけ動く。
+  // ※上下矢印は本来「数値を1ずつ増減」する動きなので、それを止めてマス移動に使う。
+  //   左右矢印はマスの中で文字の位置を動かすために、そのまま残す。
   el.priceInputs.addEventListener("keydown", function(ev){
-    if(ev.key !== "Enter") return;
-    ev.preventDefault();
+    if(ev.key !== "Enter" && ev.key !== "ArrowDown" && ev.key !== "ArrowUp") return;
     var inputs = Array.prototype.slice.call(el.priceInputs.querySelectorAll("input"));
     var i = inputs.indexOf(ev.target);
-    if(i > -1 && i < inputs.length - 1) inputs[i + 1].focus();
-    else el.memo.focus();
+    if(i < 0) return;
+    ev.preventDefault();
+    if(ev.key === "ArrowUp"){
+      if(i > 0) inputs[i - 1].focus();
+    }else{ // Enter または ArrowDown
+      if(i < inputs.length - 1) inputs[i + 1].focus();
+      else el.memo.focus();
+    }
   });
 
   // 日付を変えたら前日比の基準も変わるので再計算＋既存記録の注意書き
@@ -783,10 +878,62 @@
     }
   })();
 
+  /* ---- 自動復元のお知らせ／手動で控えから戻す ---- */
+  var recoverBanner = document.getElementById("recoverBanner");
+  var recoverInfo = document.getElementById("recoverInfo");
+
+  function daysCount(json){
+    try{ return (JSON.parse(json).records || []).length; }catch(e){ return 0; }
+  }
+
+  function restoreFrom(json, label){
+    try{
+      var b = JSON.parse(json);
+      if(!b || !Array.isArray(b.indices) || !Array.isArray(b.records)) throw 0;
+      state = b;
+      save();
+      resetForm();
+      render();
+      alert((label ? label + " " : "") + "の控えに戻しました。（全 " + state.records.length + " 日分）");
+      return true;
+    }catch(e){ alert("この控えは読み込めませんでした。"); return false; }
+  }
+
+  // 保存されている控えを、新しい順に1つずつ「戻しますか？」と確認していく
+  function pickBackup(){
+    var list = readBackups().slice().reverse(); // 新しい順
+    try{
+      var prev = localStorage.getItem(PREV_KEY);
+      if(prev) list.unshift({ date: "(直前の保存)", json: prev });
+    }catch(e){}
+    if(list.length === 0){ alert("自動の控えはまだありません。"); return; }
+    for(var i = 0; i < list.length; i++){
+      var c = list[i];
+      var ok = confirm(
+        c.date + " の控え（記録 " + daysCount(c.json) + " 日分）に戻しますか？\n\n" +
+        "【OK】これに戻す　【キャンセル】次の候補を見る"
+      );
+      if(ok){ restoreFrom(c.json, c.date); return; }
+    }
+    alert("ほかに控えはありません。");
+  }
+
+  document.getElementById("btnRecoverOther").addEventListener("click", pickBackup);
+  document.getElementById("btnRestoreBackup").addEventListener("click", pickBackup);
+  document.getElementById("btnRecoverDismiss").addEventListener("click", function(){
+    recoverBanner.classList.add("hidden");
+  });
+
   /* ---- 起動 ---- */
   load();
   resetForm();
   render();
+
+  if(recovered && recoverBanner){
+    var bk = bestBackup();
+    recoverInfo.textContent = "戻した控え：" + (bk ? (bk.date + "（記録 " + state.records.length + " 日分）") : ("記録 " + state.records.length + " 日分"));
+    recoverBanner.classList.remove("hidden");
+  }
 })();
 </script>
 </body>
