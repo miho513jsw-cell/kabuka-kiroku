@@ -727,7 +727,15 @@
     el.newIndexName.value = "";
     el.newIndexName.focus();
   });
-  el.newIndexName.addEventListener("keydown", function(e){ if(e.key === "Enter"){ e.preventDefault(); el.addIndex.click(); } });
+  el.newIndexName.addEventListener("keydown", function(e){
+    // 日本語入力の「変換を確定するEnter」では追加しない。
+    // （変換中は e.isComposing = true / 一部ブラウザは keyCode 229。
+    //   変換を確定してから、もう一度 Enter を押すと追加される）
+    if(e.key === "Enter" && !e.isComposing && e.keyCode !== 229){
+      e.preventDefault();
+      el.addIndex.click();
+    }
+  });
 
   el.mngList.addEventListener("input", function(ev){
     var id = ev.target.dataset.name;
